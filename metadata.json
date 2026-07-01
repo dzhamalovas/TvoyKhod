@@ -1,0 +1,6 @@
+{
+  "name": "НеПропусти - VK Бот & Дашборд",
+  "description": "Цифровой сервис оповещения и контроля прохождения опросов трека «Определяю» Всероссийского студенческого проекта «Твой Ход»",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

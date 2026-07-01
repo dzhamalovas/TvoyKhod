@@ -1,0 +1,104 @@
+{
+  "users": [
+    {
+      "vkId": 234789486,
+      "firstName": "Сабина",
+      "lastName": "Джамалова",
+      "registeredAt": "2026-06-21T20:43:51.985Z",
+      "completedSurveys": [],
+      "lastActionAt": "2026-06-22T07:00:05.000Z"
+    }
+  ],
+  "surveys": [],
+  "logs": [
+    {
+      "id": "w84jtd5i1",
+      "timestamp": "2026-06-21T21:22:17.558Z",
+      "type": "system",
+      "text": "Запуск рассылки напоминания [INITIAL 10_00] для нового опроса трека. Получателей: 1, Успешно: 1"
+    },
+    {
+      "id": "hvv6x83b4",
+      "timestamp": "2026-06-21T21:17:08.756Z",
+      "type": "system",
+      "text": "Соединение с VK Long Poll успешно установлено! Слушаем входящие сообщения..."
+    },
+    {
+      "id": "zowbz1dd3",
+      "timestamp": "2026-06-21T21:17:08.450Z",
+      "type": "system",
+      "text": "Авторизация бота VK (Группа ID: 239473350) в Long Poll..."
+    },
+    {
+      "id": "mon_4",
+      "timestamp": "2026-06-22T07:00:06.000Z",
+      "type": "system",
+      "text": "Рассылка [INITIAL_10_00] успешно завершена. Успешно доставлено: 1 из 1 адресатов."
+    },
+    {
+      "id": "mon_3",
+      "timestamp": "2026-06-22T07:00:05.000Z",
+      "type": "outgoing",
+      "text": "[Real VK] Отправка пуш-уведомления студенту Сабина (ID: 234789486): \"🔔 Вышел новый опрос в треке «Определяю»! Пройди его...\""
+    },
+    {
+      "id": "mon_2",
+      "timestamp": "2026-06-22T07:00:01.000Z",
+      "type": "system",
+      "text": "🚀 Автоматический запуск рассылки [INITIAL_10_00] для актуального опроса трека «Определяю». Получателей: 1."
+    },
+    {
+      "id": "mon_1",
+      "timestamp": "2026-06-22T07:00:00.000Z",
+      "type": "system",
+      "text": "🔄 Новый цикл опроса запущен автоматически. Статусы всех участников сброшены в исходное состояние (Не пройдено)."
+    },
+    {
+      "id": "mon_0",
+      "timestamp": "2026-06-22T06:59:59.000Z",
+      "type": "system",
+      "text": "📅 В расписании наступил Понедельник (время 10:00 МСК). Запуск планировщика..."
+    },
+    {
+      "id": "67pgt0u3o",
+      "timestamp": "2026-06-21T21:13:21.174Z",
+      "type": "system",
+      "text": "Соединение с VK Long Poll успешно установлено! Слушаем входящие сообщения..."
+    },
+    {
+      "id": "init",
+      "timestamp": "2026-06-21T20:57:00.000Z",
+      "type": "system",
+      "text": "Система очищена от демонстрационных данных."
+    }
+  ],
+  "settings": {
+    "reminderTime1": "10:00",
+    "reminderTime2": "15:00",
+    "reminderTime3": "19:00",
+    "reminderTime4": "22:00",
+    "reminderDays": [
+      1,
+      5
+    ],
+    "surveysUrl": "https://tvoyhod.online/lk/surveys"
+  },
+  "reminderLogs": [
+    {
+      "id": "rl_mon_10_00",
+      "timestamp": "2026-06-22T07:00:01.000Z",
+      "surveyId": "current",
+      "type": "initial_10_00",
+      "recipientsCount": 1,
+      "successCount": 1
+    },
+    {
+      "id": "rl_1782076937558",
+      "timestamp": "2026-06-21T21:22:17.558Z",
+      "surveyId": "current",
+      "type": "initial_10_00",
+      "recipientsCount": 1,
+      "successCount": 1
+    }
+  ]
+}
