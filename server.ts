@@ -487,6 +487,13 @@ async function runVkLongPoll() {
     return;
   }
 
+  // To prevent double replies when deployed to Render/VPS while AI Studio workspace is open
+  if (process.env.NODE_ENV !== "production" && process.env.ENABLE_DEV_VK_POLLING !== "true") {
+    console.log("[BOT] Real VK Longpoll is disabled in development preview to prevent double replies with the deployed bot on Render.");
+    DBService.addLog('system', 'VK Bot Long Poll отключен в панели разработки во избежание дублирования ответов (так как бот уже запущен на Render). Вы можете полноценно использовать симулятор в песочнице!');
+    return;
+  }
+
   DBService.addLog('system', `Авторизация бота VK (Группа ID: ${VK_GROUP_ID}) в Long Poll...`);
 
   try {
@@ -681,6 +688,13 @@ function runBackgroundScheduler() {
           });
 
           if (!alreadySent) {
+            // IF this is the FIRST notification of the scheduled day (initial_10_00),
+            // reset all users' completions for the new survey cycle!
+            if (slot.slotName === 'initial_10_00') {
+              console.log(`[AUTOSCHEDULER] Automatic scheduled reset of completions for today's survey cycle: ${moscowTodayStr}`);
+              DBService.resetCompletions();
+            }
+
             console.log(`[AUTOSCHEDULER] Automatic scheduled reminder trigger: ${slot.slotName} for ${moscowTodayStr}`);
             await triggerReminderInternal(slot.slotName);
           }
