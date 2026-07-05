@@ -198,74 +198,79 @@ app.get('/api/export-csv', (req, res) => {
 });
 
 // Manual reminder sender (simulation & actual dispatch support)
+// Helper to trigger reminder send-out and save log entry
+async function triggerReminderInternal(timeSlot: string): Promise<{ success: boolean; log: ReminderLog; messageSent: string }> {
+  const db = DBService.load();
+  const surveyUrl = db.settings.surveysUrl || 'https://tvoyhod.online/';
+
+  const users = DBService.getUsers();
+  // Filter out users who already completed the current survey
+  const targetUsers = users.filter(u => !u.completedSurveys.includes('current'));
+
+  let messageText = '';
+  switch(timeSlot) {
+    case 'initial_10_00':
+      messageText = `🔔 Вышел новый опрос в треке «Определяю»!\n\nПройди его сегодня, чтобы получить двойные баллы.\n\nСсылка на платформу: ${surveyUrl}\n\nПосле прохождения обязательно нажми кнопку «Опрос пройден» здесь, чтобы больше не получать напоминания!`;
+      break;
+    case 'reminder_15_00':
+      messageText = `Напоминаем, что новый опрос в треке «Определяю» ещё ждёт тебя!\n\nЕсли уже прошёл его — просто нажми кнопку «Опрос пройден».\n\nЕсли ещё нет — сейчас самое время. Ссылка: ${surveyUrl}\n\nДвойные баллы начисляются только до конца дня.`;
+      break;
+    case 'reminder_19_00':
+      messageText = `До окончания периода начисления двойных баллов остаётся всё меньше времени.\n\nНе забудь пройти сегодняшний опрос в треке «Определяю» и отметить его в боте.\n\nПлатформа «Твой Ход»: ${surveyUrl}`;
+      break;
+    case 'reminder_22_00':
+      messageText = `⏳ Сегодня последний шанс получить двойные баллы за сегодняшний опрос в треке «Определяю».\n\nЕсли ещё не успел — самое время пройти его: ${surveyUrl}`;
+      break;
+    default:
+      messageText = `🔔 Напоминаем о необходимости пройти актуальный опрос в треке «Определяю»: ${surveyUrl}`;
+  }
+
+  let successCount = 0;
+  
+  // Send to verified active VK users if token compiles
+  const hasVk = !!VK_TOKEN && VK_TOKEN !== 'vk1.a.your_token_here';
+
+  for (const user of targetUsers) {
+    if (hasVk && !user.isSimulated) {
+      // Send actual VK message
+      try {
+        await sendVKMessage(user.vkId, messageText);
+        successCount++;
+      } catch (err) {
+        DBService.addLog('error', `Не удалось отправить сообщение пользователю ${user.vkId}: ${err}`);
+      }
+    } else {
+      // Simulation mode
+      successCount++;
+    }
+  }
+
+  // Add reminder dispatch entry to DB
+  const newRemLog: ReminderLog = {
+    id: `rl_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    surveyId: 'current',
+    type: (timeSlot as any) || 'initial_10_00',
+    recipientsCount: targetUsers.length,
+    successCount
+  };
+
+  DBService.addReminderLog(newRemLog);
+  DBService.addLog('system', `Запуск рассылки напоминания [${timeSlot?.replace('_', ' ').toUpperCase()}] для нового опроса трека. Получателей: ${targetUsers.length}, Успешно: ${successCount}`);
+
+  return {
+    success: true,
+    log: newRemLog,
+    messageSent: messageText
+  };
+}
+
+// REST API Endpoint to trigger reminders manually
 app.post('/api/trigger-reminder', async (req, res) => {
   try {
     const { timeSlot } = req.body;
-    // timeSlot can be 'initial_10_00', 'reminder_15_00', 'reminder_19_00', 'reminder_22_00'
-    const db = DBService.load();
-    const surveyUrl = db.settings.surveysUrl || 'https://tvoyhod.online/';
-
-    const users = DBService.getUsers();
-    // Filter out users who already completed the current survey
-    const targetUsers = users.filter(u => !u.completedSurveys.includes('current'));
-
-    let messageText = '';
-    switch(timeSlot) {
-      case 'initial_10_00':
-        messageText = `🔔 Вышел новый опрос в треке «Определяю»!\n\nПройди его сегодня, чтобы получить двойные баллы.\n\nСсылка на платформу: ${surveyUrl}\n\nПосле прохождения обязательно нажми кнопку «Опрос пройден» здесь, чтобы больше не получать напоминания!`;
-        break;
-      case 'reminder_15_00':
-        messageText = `Напоминаем, что новый опрос в треке «Определяю» ещё ждёт тебя!\n\nЕсли уже прошёл его — просто нажми кнопку «Опрос пройден».\n\nЕсли ещё нет — сейчас самое время. Ссылка: ${surveyUrl}\n\nДвойные баллы начисляются только до конца дня.`;
-        break;
-      case 'reminder_19_00':
-        messageText = `До окончания периода начисления двойных баллов остаётся всё меньше времени.\n\nНе забудь пройти сегодняшний опрос в треке «Определяю» и отметить его в боте.\n\nПлатформа «Твой Ход»: ${surveyUrl}`;
-        break;
-      case 'reminder_22_00':
-        messageText = `⏳ Сегодня последний шанс получить двойные баллы за сегодняшний опрос в треке «Определяю».\n\nЕсли ещё не успел — самое время пройти его: ${surveyUrl}`;
-        break;
-      default:
-        messageText = `🔔 Напоминаем о необходимости пройти актуальный опрос в треке «Определяю»: ${surveyUrl}`;
-    }
-
-    let successCount = 0;
-    
-    // Send to verified active VK users if token compiles
-    const hasVk = !!VK_TOKEN && VK_TOKEN !== 'vk1.a.your_token_here';
-
-    for (const user of targetUsers) {
-      if (hasVk && !user.isSimulated) {
-        // Send actual VK message
-        try {
-          await sendVKMessage(user.vkId, messageText);
-          successCount++;
-        } catch (err) {
-          DBService.addLog('error', `Не удалось отправить сообщение пользователю ${user.vkId}: ${err}`);
-        }
-      } else {
-        // Simulation mode
-        successCount++;
-      }
-    }
-
-    // Add reminder dispatch entry to DB
-    const newRemLog: ReminderLog = {
-      id: `rl_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      surveyId: 'current',
-      type: timeSlot || 'initial_10_00',
-      recipientsCount: targetUsers.length,
-      successCount
-    };
-
-    DBService.addReminderLog(newRemLog);
-    DBService.addLog('system', `Запуск рассылки напоминания [${timeSlot?.replace('_', ' ').toUpperCase()}] для нового опроса трека. Получателей: ${targetUsers.length}, Успешно: ${successCount}`);
-
-    res.json({
-      success: true,
-      log: newRemLog,
-      messageSent: messageText
-    });
-
+    const result = await triggerReminderInternal(timeSlot);
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -584,8 +589,112 @@ async function runVkLongPoll() {
   }
 }
 
-// Launch VK bot background polling
+// Timezone-aware scheduler helper functions for Moscow (UTC+3)
+function getMoscowTimeAndDay(): { dayOfWeek: number; timeString: string; dateString: string } {
+  const now = new Date();
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  };
+  
+  const formatter = new Intl.DateTimeFormat('en-US', options);
+  const parts = formatter.formatToParts(now);
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value || '00';
+  
+  const year = getPart('year');
+  const month = getPart('month');
+  const day = getPart('day');
+  const hour = getPart('hour');
+  const minute = getPart('minute');
+  
+  const moscowNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Moscow' }));
+  const dayOfWeek = moscowNow.getDay();
+  
+  const timeString = `${hour}:${minute}`;
+  const dateString = `${year}-${month}-${day}`;
+  
+  return { dayOfWeek, timeString, dateString };
+}
+
+function getMoscowDateString(date: Date): string {
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  };
+  const formatter = new Intl.DateTimeFormat('en-CA', options);
+  return formatter.format(date);
+}
+
+function normalizeTime(tStr: string): string {
+  if (!tStr) return "";
+  const parts = tStr.split(':');
+  if (parts.length !== 2) return "";
+  const h = parseInt(parts[0], 10).toString().padStart(2, '0');
+  const m = parseInt(parts[1], 10).toString().padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+// Background scheduler that runs every 60 seconds
+function runBackgroundScheduler() {
+  console.log("[SCHEDULER] Active background timezone-aware scheduler initialized.");
+  setInterval(async () => {
+    try {
+      const db = DBService.load();
+      const settings = db.settings;
+      if (!settings) return;
+
+      const { dayOfWeek, timeString } = getMoscowTimeAndDay();
+
+      // Check if today is a scheduled day
+      const reminderDays = settings.reminderDays || [1, 5];
+      if (!reminderDays.includes(dayOfWeek)) {
+        return;
+      }
+
+      const curNormalized = normalizeTime(timeString);
+
+      // Check each time slot
+      const slots = [
+        { slotName: 'initial_10_00', settingTime: settings.reminderTime1 || '10:00' },
+        { slotName: 'reminder_15_00', settingTime: settings.reminderTime2 || '15:00' },
+        { slotName: 'reminder_19_00', settingTime: settings.reminderTime3 || '19:00' },
+        { slotName: 'reminder_22_00', settingTime: settings.reminderTime4 || '22:00' }
+      ];
+
+      for (const slot of slots) {
+        if (normalizeTime(slot.settingTime) === curNormalized) {
+          const moscowTodayStr = getMoscowDateString(new Date());
+          const alreadySent = db.reminderLogs.some(log => {
+            try {
+              const logDateStr = getMoscowDateString(new Date(log.timestamp));
+              return logDateStr === moscowTodayStr && log.type === slot.slotName;
+            } catch (e) {
+              return false;
+            }
+          });
+
+          if (!alreadySent) {
+            console.log(`[AUTOSCHEDULER] Automatic scheduled reminder trigger: ${slot.slotName} for ${moscowTodayStr}`);
+            await triggerReminderInternal(slot.slotName);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[AUTOSCHEDULER ERROR]", err);
+    }
+  }, 60000);
+}
+
+// Launch VK bot background polling & internal scheduler
 runVkLongPoll();
+runBackgroundScheduler();
 
 
 // Vite asset-serving and SPA routes middleware flow setup
