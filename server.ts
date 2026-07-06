@@ -307,7 +307,7 @@ app.all('/api/reset-completions', (req, res) => {
 // Interactive Client-Side Bot Simulator Endpoint (So the user can test the bot replies in UI!)
 app.post('/api/sim-message', async (req, res) => {
   try {
-    const { vkId, firstName, lastName, text } = req.body;
+    const { vkId, firstName, lastName, text, payload } = req.body;
     if (!vkId || !text) {
       return res.status(400).json({ success: false, error: 'vkId and text are required' });
     }
@@ -327,7 +327,7 @@ app.post('/api/sim-message', async (req, res) => {
     DBService.addLog('incoming', `[СИМУЛЯТОР VK ID: ${cleanVkId} - ${firstName}] "${text}"`);
     
     // Process response text
-    const response = await processBotMessage(cleanVkId, text);
+    const response = await processBotMessage(cleanVkId, text, payload);
     
     DBService.addLog('outgoing', `[ОТВЕТ СИМУЛЯТОРУ ID: ${cleanVkId}] "${response.message}"`);
     
@@ -342,12 +342,37 @@ app.post('/api/sim-message', async (req, res) => {
 });
 
 // Core Bot Response Processor logic (Shared for Real VK Bot and Web simulator!)
-async function processBotMessage(vkId: number, text: string): Promise<{ message: string, keyboard?: any }> {
+async function processBotMessage(vkId: number, text: string, payloadStr?: string): Promise<{ message: string, keyboard?: any }> {
   const normalizedText = text.trim().toLowerCase();
   const db = DBService.load();
   const user = db.users.find(u => u.vkId === vkId);
   const userName = user ? user.firstName : 'Участник';
   const surveyUrl = db.settings.surveysUrl || 'https://tvoyhod.online/';
+
+  let isCompleteSurvey = false;
+  let isStatus = false;
+  let isAbout = false;
+
+  // 1. Try to parse payload if present
+  if (payloadStr) {
+    try {
+      const payloadObj = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
+      if (payloadObj.action === 'complete_survey') isCompleteSurvey = true;
+      if (payloadObj.action === 'status') isStatus = true;
+      if (payloadObj.action === 'about') isAbout = true;
+    } catch (e) {}
+  }
+
+  // 2. Fall back/supplement with text matches
+  if (normalizedText.includes('прошел') || normalizedText.includes('пройдено') || normalizedText.includes('прошёл') || normalizedText.includes('пройден') || normalizedText.includes('готово')) {
+    isCompleteSurvey = true;
+  }
+  if (normalizedText.includes('статус') || normalizedText.includes('мой статус')) {
+    isStatus = true;
+  }
+  if (normalizedText.includes('проекте') || normalizedText.includes('сервис') || normalizedText.includes('непропусти')) {
+    isAbout = true;
+  }
 
   // 1. GREETINGS
   if (normalizedText === 'старт' || normalizedText === 'привет' || normalizedText === 'начать' || normalizedText === 'start') {
@@ -366,7 +391,7 @@ async function processBotMessage(vkId: number, text: string): Promise<{ message:
   }
 
   // 2. COMPLETE SURVEY CONFIRMATION
-  if (normalizedText.includes('прошел') || normalizedText.includes('пройдено') || normalizedText.includes('прошёл') || normalizedText.includes('готово')) {
+  if (isCompleteSurvey) {
     const alreadyDone = user ? user.completedSurveys.includes('current') : false;
     if (alreadyDone) {
       return {
@@ -383,7 +408,7 @@ async function processBotMessage(vkId: number, text: string): Promise<{ message:
   }
 
   // 3. CHECK USER STATUS
-  if (normalizedText.includes('статус') || normalizedText.includes('мой статус')) {
+  if (isStatus) {
     let msg = `📊 Твой профиль активности «НеПропусти»:\n\n`;
     msg += `👤 Имя: ${userName}\n`;
     msg += `🔑 VK ID: ${vkId}\n`;
@@ -405,7 +430,7 @@ async function processBotMessage(vkId: number, text: string): Promise<{ message:
   }
 
   // 4. ABOUT PROJECT
-  if (normalizedText.includes('проекте') || normalizedText.includes('сервис') || normalizedText.includes('непропусти')) {
+  if (isAbout) {
     let msg = `⚙️ О сервисе «НеПропусти»:\n\n`;
     msg += `Информационный бот разработан специально для участников студенческого трека «Определяю» проекта «Твой Ход».\n\n`;
     msg += `💡 Основные фичи:\n`;
@@ -594,7 +619,7 @@ async function runVkLongPoll() {
               DBService.addLog('incoming', `[Real VK] Сообщение от ${firstName} ${lastName} (ID: ${userId}): "${text}"`);
 
               // Process Bot reply logic
-              const finalReply = await processBotMessage(userId, text);
+              const finalReply = await processBotMessage(userId, text, message.payload);
 
               // Send response back
               try {
