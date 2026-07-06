@@ -265,19 +265,20 @@ async function triggerReminderInternal(timeSlot: string): Promise<{ success: boo
   };
 }
 
-// REST API Endpoint to trigger reminders manually
-app.post('/api/trigger-reminder', async (req, res) => {
+// REST API Endpoint to trigger reminders manually (supports GET and POST for cron-jobs/webhooks)
+app.all('/api/trigger-reminder', async (req, res) => {
   try {
-    const { timeSlot } = req.body;
-    const result = await triggerReminderInternal(timeSlot);
+    // Get timeSlot from query parameters (for GET requests) or body (for POST requests)
+    const timeSlot = req.query.timeSlot || req.body?.timeSlot || 'initial_10_00';
+    const result = await triggerReminderInternal(timeSlot as string);
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Reset completions endpoint to start a brand new survey tracking cycle
-app.post('/api/reset-completions', (req, res) => {
+// Reset completions endpoint to start a brand new survey tracking cycle (supports GET and POST)
+app.all('/api/reset-completions', (req, res) => {
   try {
     DBService.resetCompletions();
     res.json({ success: true, message: 'Статусы всех студентов успешно сброшены. Ожидаем прохождение нового опроса!' });
