@@ -17,9 +17,23 @@ export default function HostingGuide() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left Column: Key Rules */}
         <div className="space-y-6">
+          <div className="border-l-4 border-emerald-500 bg-emerald-500/5 p-4 rounded-r-2xl border-y border-r border-slate-800/40">
+            <h3 className="font-bold text-emerald-300 flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wider font-mono">
+              <Server className="w-4 h-4 text-emerald-400" /> 1. Важно: Деплой на Render.com
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Убедитесь, что вы создали именно <strong className="text-emerald-400">Web Service</strong> (а не Static Site). Static Site игнорирует бэкенд (<code className="text-emerald-300">server.ts</code>) и не запустит бота.
+            </p>
+            <div className="mt-2.5 bg-slate-950 border border-slate-900 rounded-xl p-3 font-mono text-[10px] text-slate-300 leading-relaxed space-y-1">
+              <div><strong className="text-emerald-400">Runtime:</strong> Node</div>
+              <div><strong className="text-emerald-400">Build Command:</strong> <code className="text-slate-100 font-bold">npm run build</code></div>
+              <div><strong className="text-emerald-400">Start Command:</strong> <code className="text-slate-100 font-bold">npm run start</code></div>
+            </div>
+          </div>
+
           <div className="border-l-4 border-cyan-500 bg-cyan-500/5 p-4 rounded-r-2xl border-y border-r border-slate-800/40">
             <h3 className="font-bold text-cyan-300 flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wider font-mono">
-              <Server className="w-4 h-4 text-cyan-400" /> 1. Выберите правильный Хостинг (VPS/VDS)
+              <Server className="w-4 h-4 text-cyan-400" /> 2. Альтернатива: Хостинг (VPS/VDS)
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
               Для работы в режиме <strong className="text-cyan-400 font-bold">Long Poll</strong> не требуется выделенный домен или белый IP-адрес. Бот сам инициирует исходящие запросы к защищённым серверам VK API. Рекомендуется использовать VPS в РФ (TimeWeb, Selectel, RuVDS) на ОС Ubuntu 22.04 LTS (1 vCPU, 1 GB RAM минимум) для уменьшения пинга.
@@ -28,7 +42,7 @@ export default function HostingGuide() {
 
           <div className="border-l-4 border-indigo-500 bg-indigo-500/5 p-4 rounded-r-2xl border-y border-r border-slate-800/40">
             <h3 className="font-bold text-indigo-300 flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wider font-mono">
-              <Cpu className="w-4 h-4 text-indigo-400" /> 2. Используйте менеджер процессов PM2
+              <Cpu className="w-4 h-4 text-indigo-400" /> 3. Используйте менеджер процессов PM2
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
               PM2 выполняет перезапуск Node.js процесса в случае падения сети, сбоях внешней СУБД или аварийной перезагрузки VPS.
@@ -45,7 +59,7 @@ export default function HostingGuide() {
 
           <div className="border-l-4 border-amber-500 bg-amber-500/5 p-4 rounded-r-2xl border-y border-r border-slate-800/40">
             <h3 className="font-bold text-amber-300 flex items-center gap-2 mb-1.5 text-xs uppercase tracking-wider font-mono">
-              <AlertTriangle className="w-4 h-4 text-amber-400" /> 3. Обработка VK API Rate Limits & Ошибок
+              <AlertTriangle className="w-4 h-4 text-amber-400" /> 4. Обработка VK API Rate Limits & Ошибок
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
               VK ограничивает отправку до 100 сообщений в секунду для сообществ. Для массовой рассылки студентам трека «Определяю»:
