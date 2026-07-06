@@ -226,9 +226,14 @@ async function triggerReminderInternal(timeSlot: string): Promise<{ success: boo
   }
 
   let successCount = 0;
+  let realCount = 0;
+  let simulatedCount = 0;
   
-  // Send to verified active VK users if token compiles
-  const hasVk = !!VK_TOKEN && VK_TOKEN !== 'vk1.a.your_token_here';
+  // Send to verified active VK users if token compiles and is not a placeholder
+  const hasVk = !!VK_TOKEN && 
+                 VK_TOKEN !== 'vk1.a.your_token_here' && 
+                 VK_TOKEN !== 'your_vk_group_token_here' && 
+                 VK_TOKEN.trim() !== '';
 
   for (const user of targetUsers) {
     if (hasVk && !user.isSimulated) {
@@ -236,12 +241,16 @@ async function triggerReminderInternal(timeSlot: string): Promise<{ success: boo
       try {
         await sendVKMessage(user.vkId, messageText);
         successCount++;
-      } catch (err) {
-        DBService.addLog('error', `Не удалось отправить сообщение пользователю ${user.vkId}: ${err}`);
+        realCount++;
+        DBService.addLog('outgoing', `[Real VK] Успешно отправлено напоминание ${user.firstName} ${user.lastName} (ID: ${user.vkId})`);
+      } catch (err: any) {
+        DBService.addLog('error', `Не удалось отправить сообщение пользователю ${user.vkId}: ${err.message || err}`);
       }
     } else {
       // Simulation mode
       successCount++;
+      simulatedCount++;
+      DBService.addLog('system', `[СИМУЛЯЦИЯ] Отправлено виртуальное напоминание ${user.firstName} ${user.lastName} (ID: ${user.vkId}). Реальная отправка пропущена (VK токен не настроен или пользователь симуляционный)`);
     }
   }
 
@@ -252,11 +261,16 @@ async function triggerReminderInternal(timeSlot: string): Promise<{ success: boo
     surveyId: 'current',
     type: (timeSlot as any) || 'initial_10_00',
     recipientsCount: targetUsers.length,
-    successCount
+    successCount: realCount // Log real successful deliveries in database log
   };
 
   DBService.addReminderLog(newRemLog);
-  DBService.addLog('system', `Запуск рассылки напоминания [${timeSlot?.replace('_', ' ').toUpperCase()}] для нового опроса трека. Получателей: ${targetUsers.length}, Успешно: ${successCount}`);
+  
+  if (hasVk) {
+    DBService.addLog('system', `Запуск рассылки [${timeSlot?.replace('_', ' ').toUpperCase()}]. Получателей: ${targetUsers.length}, Реально доставлено: ${realCount}, Ошибок: ${targetUsers.length - realCount}`);
+  } else {
+    DBService.addLog('system', `📢 [СИМУЛЯЦИЯ] Рассылка [${timeSlot?.replace('_', ' ').toUpperCase()}] завершена в тестовом режиме. Реальная отправка недоступна (VK_GROUP_TOKEN не настроен на сервере). Получателей: ${targetUsers.length}`);
+  }
 
   return {
     success: true,
@@ -270,9 +284,11 @@ app.all('/api/trigger-reminder', async (req, res) => {
   try {
     // Get timeSlot from query parameters (for GET requests) or body (for POST requests)
     const timeSlot = req.query.timeSlot || req.body?.timeSlot || 'initial_10_00';
+    DBService.addLog('system', `Получен запрос на запуск рассылки напоминаний (TimeSlot: ${timeSlot}) по API/Крону`);
     const result = await triggerReminderInternal(timeSlot as string);
     res.json(result);
   } catch (err: any) {
+    DBService.addLog('error', `Ошибка API запуска напоминаний: ${err.message}`);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -280,6 +296,7 @@ app.all('/api/trigger-reminder', async (req, res) => {
 // Reset completions endpoint to start a brand new survey tracking cycle (supports GET and POST)
 app.all('/api/reset-completions', (req, res) => {
   try {
+    DBService.addLog('system', 'Получен запрос на сброс статусов прохождения опросов студентов');
     DBService.resetCompletions();
     res.json({ success: true, message: 'Статусы всех студентов успешно сброшены. Ожидаем прохождение нового опроса!' });
   } catch (err: any) {
@@ -483,7 +500,10 @@ async function sendVKMessage(peerId: number, message: string) {
 
 // Polling core generator for VK Long Poll Server
 async function runVkLongPoll() {
-  if (!VK_TOKEN || VK_TOKEN === 'vk1.a.your_token_here') {
+  if (!VK_TOKEN || 
+      VK_TOKEN === 'vk1.a.your_token_here' || 
+      VK_TOKEN === 'your_vk_group_token_here' || 
+      VK_TOKEN.trim() === '') {
     DBService.addLog('system', 'VK_GROUP_TOKEN отсутствует или является плейсхолдером. Бот функционирует в РЕЖИМЕ СИМУЛЯЦИИ ПАНЕЛИ.');
     return;
   }
