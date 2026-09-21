@@ -342,10 +342,10 @@ app.post('/api/sim-message', async (req, res) => {
 });
 
 // Core Bot Response Processor logic (Shared for Real VK Bot and Web simulator!)
-async function processBotMessage(vkId: number, text: string, payloadStr?: string): Promise<{ message: string, keyboard?: any }> {
-  const normalizedText = text.trim().toLowerCase();
+async function processBotMessage(vkId: number, text: string, payloadStr?: any): Promise<{ message: string, keyboard?: any }> {
+  const normalizedText = (text || '').trim().toLowerCase();
   const db = DBService.load();
-  const user = db.users.find(u => u.vkId === vkId);
+  let user = db.users.find(u => Number(u.vkId) === Number(vkId));
   const userName = user ? user.firstName : 'Участник';
   const surveyUrl = db.settings.surveysUrl || 'https://tvoyhod.online/';
 
@@ -357,14 +357,33 @@ async function processBotMessage(vkId: number, text: string, payloadStr?: string
   if (payloadStr) {
     try {
       const payloadObj = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
-      if (payloadObj.action === 'complete_survey') isCompleteSurvey = true;
-      if (payloadObj.action === 'status') isStatus = true;
-      if (payloadObj.action === 'about') isAbout = true;
-    } catch (e) {}
+      const act = payloadObj?.action || payloadObj?.command || payloadObj?.button;
+      if (act === 'complete_survey' || act === 'complete') isCompleteSurvey = true;
+      if (act === 'status') isStatus = true;
+      if (act === 'about') isAbout = true;
+      
+      if (typeof payloadStr === 'string' && payloadStr.includes('complete_survey')) {
+        isCompleteSurvey = true;
+      }
+    } catch (e) {
+      if (typeof payloadStr === 'string' && payloadStr.includes('complete_survey')) {
+        isCompleteSurvey = true;
+      }
+    }
   }
 
-  // 2. Fall back/supplement with text matches
-  if (normalizedText.includes('прошел') || normalizedText.includes('пройдено') || normalizedText.includes('прошёл') || normalizedText.includes('пройден') || normalizedText.includes('готово')) {
+  // 2. Comprehensive Russian keyword and root matching for "Опрос пройден"
+  const completionKeywords = [
+    'опрос пройден', 'опрос прошел', 'опрос прошла', 'опрос заполнил', 'опрос заполнила',
+    'пройден', 'пройдено', 'пройдена', 'пройдены',
+    'прошел', 'прошла', 'прошёл', 'прошли',
+    'заполнил', 'заполнила', 'заполнено',
+    'отметил', 'отметила', 'отметить опрос',
+    'готово', 'сделал', 'сделала', 'сделано',
+    'я прошел', 'я прошла', 'я заполнил', 'я заполнила'
+  ];
+
+  if (completionKeywords.some(kw => normalizedText.includes(kw))) {
     isCompleteSurvey = true;
   }
   if (normalizedText.includes('статус') || normalizedText.includes('мой статус')) {
@@ -392,16 +411,28 @@ async function processBotMessage(vkId: number, text: string, payloadStr?: string
 
   // 2. COMPLETE SURVEY CONFIRMATION
   if (isCompleteSurvey) {
+    if (!user) {
+      DBService.addUser({
+        vkId,
+        firstName: 'Студент',
+        lastName: 'Твоего Хода',
+        registeredAt: new Date().toISOString(),
+        completedSurveys: [],
+        lastActionAt: new Date().toISOString()
+      });
+      user = DBService.load().users.find(u => Number(u.vkId) === Number(vkId));
+    }
+
     const alreadyDone = user ? user.completedSurveys.includes('current') : false;
     if (alreadyDone) {
       return {
-        message: `😉 Ты уже отметил опрос трека «Определяю» как пройденный! Спасибо за твою активность. Двойные баллы гарантированы! 🏅`,
+        message: `😉 Ты уже отметил опрос трека «Определяю» как пройденный! Твой статус зафиксирован, напоминания отключены. Двойные баллы гарантированы! 🏅`,
         keyboard: VK_KEYBOARD
       };
     }
 
-    // Mark completed
-    DBService.markSurveyCompleted(vkId, 'current');
+    // Mark completed in database
+    DBService.markSurveyCompleted(vkId, 'current', user?.firstName, user?.lastName);
     
     let completionMessage = `🎉 Ура! Твой статус обновлён.\n\nТы успешно отметил актуальный опрос трека пройденным! 👍\n\nЯ убрал тебя из рассылки напоминаний на сегодня. Спасибо за активность, баллы начислены в системе «Твой Ход»! 💪`;
     return { message: completionMessage, keyboard: VK_KEYBOARD };
@@ -523,6 +554,29 @@ async function sendVKMessage(peerId: number, message: string) {
   return data;
 }
 
+// Answer callback button events (message_event)
+async function sendVKMessageEventAnswer(userId: number, eventId: string, peerId: number, snackbarText?: string) {
+  if (!VK_TOKEN || VK_TOKEN === 'vk1.a.your_token_here') return;
+  try {
+    const params = new URLSearchParams({
+      event_id: eventId,
+      user_id: userId.toString(),
+      peer_id: peerId.toString(),
+      access_token: VK_TOKEN,
+      v: VK_API_VERSION
+    });
+    if (snackbarText) {
+      params.set('event_data', JSON.stringify({ type: "show_snackbar", text: snackbarText }));
+    }
+    await fetch('https://api.vk.com/method/messages.sendMessageEventAnswer', {
+      method: 'POST',
+      body: params
+    });
+  } catch (e) {
+    console.error("Failed to answer VK message event", e);
+  }
+}
+
 // Polling core generator for VK Long Poll Server
 async function runVkLongPoll() {
   if (!VK_TOKEN || 
@@ -533,10 +587,9 @@ async function runVkLongPoll() {
     return;
   }
 
-  // To prevent double replies when deployed to Render/VPS while AI Studio workspace is open
-  if (process.env.NODE_ENV !== "production" && process.env.ENABLE_DEV_VK_POLLING !== "true") {
-    console.log("[BOT] Real VK Longpoll is disabled in development preview to prevent double replies with the deployed bot on Render.");
-    DBService.addLog('system', 'VK Bot Long Poll отключен в панели разработки во избежание дублирования ответов (так как бот уже запущен на Render). Вы можете полноценно использовать симулятор в песочнице!');
+  if (process.env.DISABLE_VK_POLLING === "true") {
+    console.log("[BOT] Real VK Longpoll is explicitly disabled by DISABLE_VK_POLLING env variable.");
+    DBService.addLog('system', 'VK Bot Long Poll отключен переменной DISABLE_VK_POLLING.');
     return;
   }
 
@@ -560,7 +613,7 @@ async function runVkLongPoll() {
     }
 
     const { server, key, ts } = body.response;
-    DBService.addLog('system', `Соединение с VK Long Poll успешно установлено! Слушаем входящие сообщения...`);
+    DBService.addLog('system', `Соединение с VK Long Poll успешно установлено! Слушаем входящие сообщения и нажатия кнопок...`);
 
     let currentTs = ts;
 
@@ -586,10 +639,16 @@ async function runVkLongPoll() {
 
         if (pollData.updates && pollData.updates.length > 0) {
           for (const update of pollData.updates) {
+            // 1. Regular incoming messages and text keyboard button clicks
             if (update.type === 'message_new') {
-              const message = update.object.message;
-              const userId = message.from_id;
-              const text = message.text || '';
+              const message = update.object?.message || update.object;
+              if (!message) continue;
+
+              const userId = Number(message.from_id || message.user_id || message.peer_id);
+              if (!userId) continue;
+
+              const text = (message.text || '').trim();
+              const payload = message.payload;
 
               // Try to fetch user name from VK to register user beautifully
               let firstName = 'Студент';
@@ -619,7 +678,7 @@ async function runVkLongPoll() {
               DBService.addLog('incoming', `[Real VK] Сообщение от ${firstName} ${lastName} (ID: ${userId}): "${text}"`);
 
               // Process Bot reply logic
-              const finalReply = await processBotMessage(userId, text, message.payload);
+              const finalReply = await processBotMessage(userId, text, payload);
 
               // Send response back
               try {
@@ -627,6 +686,31 @@ async function runVkLongPoll() {
                 DBService.addLog('outgoing', `[Real VK] Ответ отправлен пользователю ${userId}`);
               } catch (err: any) {
                 DBService.addLog('error', `Ошибка отправки сообщения VK: ${err.message}`);
+              }
+            }
+
+            // 2. Callback-button events (when user clicks an inline callback button)
+            if (update.type === 'message_event') {
+              const eventObj = update.object;
+              if (eventObj) {
+                const userId = Number(eventObj.user_id || eventObj.peer_id);
+                const eventId = eventObj.event_id;
+                const payload = eventObj.payload;
+
+                DBService.addLog('incoming', `[Real VK Callback Button] Нажата кнопка пользователем ID: ${userId}`);
+
+                // Answer immediately so the button stops showing loading spinner
+                await sendVKMessageEventAnswer(userId, eventId, Number(eventObj.peer_id || userId), "Опрос отмечен как пройденный! ✅");
+
+                // Process bot message logic
+                const finalReply = await processBotMessage(userId, "Опрос пройден", payload);
+
+                try {
+                  await sendVKMessage(userId, finalReply.message);
+                  DBService.addLog('outgoing', `[Real VK] Ответ отправлен пользователю ${userId}`);
+                } catch (err: any) {
+                  DBService.addLog('error', `Ошибка отправки сообщения VK: ${err.message}`);
+                }
               }
             }
           }
@@ -638,9 +722,90 @@ async function runVkLongPoll() {
     }
 
   } catch (err: any) {
-    DBService.addLog('error', `Критическая ошибка запуска VK Bot: ${err.message}. Переход на Режим Симуляции.`);
+    DBService.addLog('error', `Критическая ошибка запуска VK Bot: ${err.message}.`);
   }
 }
+
+// VK Callback API Webhook support (for users who configure Webhook/Callback API instead of LongPoll)
+app.post(['/api/vk-callback', '/vk-callback', '/callback'], async (req, res) => {
+  try {
+    const { type, object, group_id } = req.body;
+    
+    // 1. VK confirmation handshake
+    if (type === 'confirmation') {
+      const confirmCode = process.env.VK_CONFIRMATION_CODE || 'ok';
+      DBService.addLog('system', `Получен запрос подтверждения Callback API от VK (Группа: ${group_id}).`);
+      return res.send(confirmCode);
+    }
+
+    // 2. Handle message_new
+    if (type === 'message_new') {
+      const message = object?.message || object;
+      if (message) {
+        const userId = Number(message.from_id || message.user_id || message.peer_id);
+        const text = (message.text || '').trim();
+        const payload = message.payload;
+
+        if (userId) {
+          let firstName = 'Студент';
+          let lastName = 'Твоего Хода';
+          try {
+            const userGetUrl = `https://api.vk.com/method/users.get?user_ids=${userId}&access_token=${VK_TOKEN}&v=${VK_API_VERSION}`;
+            const userRes = await fetch(userGetUrl);
+            const userData: any = await userRes.json();
+            if (userData.response && userData.response[0]) {
+              firstName = userData.response[0].first_name || 'Студент';
+              lastName = userData.response[0].last_name || 'Твоего Хода';
+            }
+          } catch (e) {}
+
+          DBService.addUser({
+            vkId: userId,
+            firstName,
+            lastName,
+            registeredAt: new Date().toISOString(),
+            completedSurveys: [],
+            lastActionAt: new Date().toISOString()
+          });
+
+          DBService.addLog('incoming', `[Real VK Callback] Сообщение от ${firstName} ${lastName} (ID: ${userId}): "${text}"`);
+          const finalReply = await processBotMessage(userId, text, payload);
+
+          try {
+            await sendVKMessage(userId, finalReply.message);
+            DBService.addLog('outgoing', `[Real VK] Ответ отправлен пользователю ${userId}`);
+          } catch (err: any) {
+            DBService.addLog('error', `Ошибка отправки сообщения VK: ${err.message}`);
+          }
+        }
+      }
+      return res.send('ok');
+    }
+
+    // 3. Handle message_event
+    if (type === 'message_event') {
+      if (object) {
+        const userId = Number(object.user_id || object.peer_id);
+        const eventId = object.event_id;
+        const payload = object.payload;
+
+        if (userId && eventId) {
+          await sendVKMessageEventAnswer(userId, eventId, Number(object.peer_id || userId), "Опрос отмечен как пройденный! ✅");
+          const finalReply = await processBotMessage(userId, "Опрос пройден", payload);
+          try {
+            await sendVKMessage(userId, finalReply.message);
+          } catch (err: any) {}
+        }
+      }
+      return res.send('ok');
+    }
+
+    return res.send('ok');
+  } catch (err: any) {
+    console.error("VK Callback error", err);
+    res.send('ok');
+  }
+});
 
 // Timezone-aware scheduler helper functions for Moscow (UTC+3)
 function getMoscowTimeAndDay(): { dayOfWeek: number; timeString: string; dateString: string } {

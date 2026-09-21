@@ -72,35 +72,56 @@ export class DBService {
 
   public static addUser(user: VKUser): void {
     const db = this.load();
-    const exists = db.users.find(u => u.vkId === user.vkId);
+    const exists = db.users.find(u => Number(u.vkId) === Number(user.vkId));
     if (!exists) {
       db.users.push(user);
       this.save();
       this.addLog('system', `Зарегистрирован новый пользователь: ${user.firstName} ${user.lastName} (ID: ${user.vkId})`);
     } else {
       exists.lastActionAt = new Date().toISOString();
+      if (user.firstName && user.firstName !== 'Пользователь') exists.firstName = user.firstName;
+      if (user.lastName && user.lastName !== 'Симулятора') exists.lastName = user.lastName;
       this.save();
     }
   }
 
-  public static markSurveyCompleted(vkId: number, surveyId: string): boolean {
+  public static markSurveyCompleted(vkId: number, surveyId: string, firstName = 'Студент', lastName = 'Твоего Хода'): boolean {
     const db = this.load();
-    const user = db.users.find(u => u.vkId === vkId);
-    if (user) {
-      if (!user.completedSurveys.includes(surveyId)) {
-        user.completedSurveys.push(surveyId);
-        user.lastActionAt = new Date().toISOString();
-        
-        // Update survey completion count
-        const survey = db.surveys.find(s => s.id === surveyId);
-        if (survey) {
-          survey.completionsCount++;
-        }
-        
-        this.save();
-        this.addLog('system', `Пользователь ${user.firstName} ${user.lastName} (ID: ${vkId}) успешно отметил опрос пройденным: ${surveyId}`);
-        return true;
+    let user = db.users.find(u => Number(u.vkId) === Number(vkId));
+    
+    // Auto-create user if not found
+    if (!user) {
+      user = {
+        vkId: Number(vkId),
+        firstName,
+        lastName,
+        registeredAt: new Date().toISOString(),
+        completedSurveys: [surveyId],
+        lastActionAt: new Date().toISOString()
+      };
+      db.users.push(user);
+      const survey = db.surveys.find(s => s.id === surveyId);
+      if (survey) {
+        survey.completionsCount++;
       }
+      this.save();
+      this.addLog('system', `Пользователь ${firstName} ${lastName} (ID: ${vkId}) зарегистрирован и отметил опрос пройденным: ${surveyId}`);
+      return true;
+    }
+
+    if (!user.completedSurveys.includes(surveyId)) {
+      user.completedSurveys.push(surveyId);
+      user.lastActionAt = new Date().toISOString();
+      
+      // Update survey completion count
+      const survey = db.surveys.find(s => s.id === surveyId);
+      if (survey) {
+        survey.completionsCount++;
+      }
+      
+      this.save();
+      this.addLog('system', `Пользователь ${user.firstName} ${user.lastName} (ID: ${vkId}) успешно отметил опрос пройденным: ${surveyId}`);
+      return true;
     }
     return false;
   }

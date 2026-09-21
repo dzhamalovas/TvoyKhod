@@ -31,7 +31,7 @@ export default function BotSimulator({ onMessageSent }: BotSimulatorProps) {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const handleSendMessage = async (textToSend: string) => {
+  const handleSendMessage = async (textToSend: string, payloadToSend?: string) => {
     if (!textToSend.trim()) return;
 
     // 1. Add user message
@@ -55,7 +55,8 @@ export default function BotSimulator({ onMessageSent }: BotSimulatorProps) {
           vkId: simulatorUser.vkId,
           firstName: simulatorUser.firstName,
           lastName: simulatorUser.lastName,
-          text: textToSend
+          text: textToSend,
+          payload: payloadToSend
         })
       });
 
@@ -95,9 +96,24 @@ export default function BotSimulator({ onMessageSent }: BotSimulatorProps) {
   };
 
   const menuButtons = [
-    { label: "✅ Опрос пройден", text: "Опрос пройден", color: "bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 col-span-2" },
-    { label: "📊 Мой статус", text: "Мой статус", color: "bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20" },
-    { label: "ℹ️ О проекте", text: "О проекте", color: "bg-slate-800/40 text-slate-300 hover:bg-slate-800/60 border border-slate-700/50" }
+    { 
+      label: "✅ Опрос пройден", 
+      text: "✅ Опрос пройден", 
+      payload: JSON.stringify({ action: "complete_survey" }), 
+      color: "bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 col-span-2" 
+    },
+    { 
+      label: "📊 Мой статус", 
+      text: "📊 Мой статус", 
+      payload: JSON.stringify({ action: "status" }), 
+      color: "bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20" 
+    },
+    { 
+      label: "ℹ️ О проекте", 
+      text: "ℹ️ О проекте «НеПропусти»", 
+      payload: JSON.stringify({ action: "about" }), 
+      color: "bg-slate-800/40 text-slate-300 hover:bg-slate-800/60 border border-slate-700/50" 
+    }
   ];
 
   return (
@@ -171,7 +187,7 @@ export default function BotSimulator({ onMessageSent }: BotSimulatorProps) {
           {menuButtons.map((btn, idx) => (
             <button
               key={idx}
-              onClick={() => handleSendMessage(btn.text)}
+              onClick={() => handleSendMessage(btn.text, btn.payload)}
               className={`py-2 px-3 text-[11px] font-bold rounded-xl text-center cursor-pointer transition duration-200 border ${btn.color}`}
             >
               {btn.label}
